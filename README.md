@@ -54,10 +54,15 @@ nllb-word-alignment-from-attention/
 ## Installation
 
 ```bash
-git clone https://github.com/your-org/nllb-word-alignment-from-attention
+git clone https://github.com/sil-ai/nllb-word-alignment-from-attention
 cd nllb-word-alignment-from-attention
 pip install -r requirements.txt
+
+# Configure Modal (for GPU inference)
+modal token new
 ```
+
+**Note**: GPU inference runs remotely on [Modal](https://modal.com/). You need access to the `agent-critique` Modal app with the `AlignmentExtractor` class.
 
 ## Usage
 

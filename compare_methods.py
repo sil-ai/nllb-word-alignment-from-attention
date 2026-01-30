@@ -4,7 +4,9 @@ Compare standard vs Shift-Att alignment extraction methods.
 
 This script runs both methods on sentence pairs and compares:
 1. Intrinsic quality metrics (concentration, bidirectionality, etc.)
-2. Layer-by-layer comparison across all 24 NLLB layers
+2. Layer-by-layer comparison across NLLB layers
+
+GPU inference runs remotely on Modal. Only lightweight numpy processing runs locally.
 
 Usage:
     python compare_methods.py \
@@ -13,18 +15,18 @@ Usage:
         --target data/nih-target.txt \
         --sample-size 100
 
-Output:
-    Markdown-formatted comparison table showing metrics for each layer.
+Prerequisites:
+    - Modal account and CLI configured (modal token new)
+    - Access to the agent-critique Modal app with AlignmentExtractor class
 """
 
 import argparse
+import asyncio
 import random
 from collections import Counter, defaultdict
 from typing import Dict, List, Tuple
 
 import numpy as np
-import torch
-from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
 
 from alignment_extractor import (
     map_tokens_to_words,
@@ -64,70 +66,6 @@ def load_sentence_pairs(
     return pairs
 
 
-def extract_attention_all_layers(
-    model,
-    tokenizer,
-    src_text: str,
-    tgt_text: str,
-    src_lang: str = "eng_Latn",
-    tgt_lang: str = "nih_Latn",
-) -> Dict:
-    """
-    Extract cross-attention matrices from all layers using teacher forcing.
-
-    Args:
-        model: HuggingFace NLLB model
-        tokenizer: Corresponding tokenizer
-        src_text: Source language text
-        tgt_text: Target language text (for teacher forcing)
-        src_lang: Source language code
-        tgt_lang: Target language code
-
-    Returns:
-        Dict with src_tokens, tgt_tokens, and attention_matrices by layer
-    """
-    device = next(model.parameters()).device
-
-    # Tokenize source
-    tokenizer.src_lang = src_lang
-    src_inputs = tokenizer(src_text, return_tensors="pt").to(device)
-
-    # Tokenize target with target language token prepended
-    tokenizer.tgt_lang = tgt_lang
-    with tokenizer.as_target_tokenizer():
-        tgt_inputs = tokenizer(tgt_text, return_tensors="pt").to(device)
-
-    # Run model with teacher forcing
-    with torch.no_grad():
-        outputs = model(
-            input_ids=src_inputs["input_ids"],
-            attention_mask=src_inputs["attention_mask"],
-            decoder_input_ids=tgt_inputs["input_ids"],
-            output_attentions=True,
-            return_dict=True,
-        )
-
-    # Extract cross-attention from all layers
-    # Shape of each: (batch, heads, tgt_len, src_len)
-    cross_attentions = outputs.cross_attentions
-
-    attention_matrices = {}
-    for layer_idx, layer_attn in enumerate(cross_attentions):
-        # Average across attention heads
-        avg_attn = layer_attn[0].mean(dim=0).cpu().numpy()  # (tgt_len, src_len)
-        attention_matrices[layer_idx] = avg_attn
-
-    # Get tokens for mapping
-    src_tokens = tokenizer.convert_ids_to_tokens(src_inputs["input_ids"][0])
-    tgt_tokens = tokenizer.convert_ids_to_tokens(tgt_inputs["input_ids"][0])
-
-    return {
-        "src_tokens": src_tokens,
-        "tgt_tokens": tgt_tokens,
-        "attention_matrices": attention_matrices,
-    }
-
-
 def compute_metrics_for_layer(
     attention_results: List[Dict],
     layer: int,
@@ -158,7 +96,7 @@ def compute_metrics_for_layer(
         if layer not in attn_matrices or not src_tokens or not tgt_tokens:
             continue
 
-        attn = attn_matrices[layer]
+        attn = np.array(attn_matrices[layer])
 
         # Map tokens to words
         src_mapping = map_tokens_to_words(src_tokens)
@@ -228,13 +166,12 @@ def compute_metrics_for_layer(
     }
 
 
-def run_comparison(
+async def run_comparison(
     model_id: str,
     source_path: str,
     target_path: str,
     sample_size: int = 100,
-    src_lang: str = "eng_Latn",
-    tgt_lang: str = "nih_Latn",
+    layers: List[int] = None,
     output_file: str = None,
 ):
     """
@@ -245,10 +182,14 @@ def run_comparison(
         source_path: Path to source text file
         target_path: Path to target text file
         sample_size: Number of sentence pairs to evaluate
-        src_lang: Source language code for NLLB
-        tgt_lang: Target language code for NLLB
+        layers: List of layers to extract (default: [3, 5, 7, 9, 11])
         output_file: Optional output file for results
     """
+    import modal
+
+    if layers is None:
+        layers = [3, 5, 7, 9, 11]
+
     print(f"\n{'='*70}")
     print("NLLB Alignment Method Comparison: Standard vs Shift-Att")
     print(f"{'='*70}")
@@ -256,58 +197,55 @@ def run_comparison(
     print(f"Source: {source_path}")
     print(f"Target: {target_path}")
     print(f"Sample size: {sample_size}")
-
-    # Load model
-    print("\nLoading model...")
-    tokenizer = AutoTokenizer.from_pretrained(model_id)
-    model = AutoModelForSeq2SeqLM.from_pretrained(model_id)
-
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    model = model.to(device)
-    model.eval()
-    print(f"Model loaded on {device}")
+    print(f"Layers: {layers}")
 
     # Load sentence pairs
     print("\nLoading sentence pairs...")
     pairs = load_sentence_pairs(source_path, target_path, sample_size)
     print(f"Loaded {len(pairs)} non-empty sentence pairs")
 
-    # Extract attention from all pairs
-    print("\nExtracting attention matrices...")
+    # Create batches for GPU processing
+    batch_size = 50
+    batches = []
+    for i in range(0, len(pairs), batch_size):
+        batch_pairs = pairs[i:i + batch_size]
+        batches.append({
+            "idx": i // batch_size,
+            "src_texts": [p["src"] for p in batch_pairs],
+            "tgt_texts": [p["tgt"] for p in batch_pairs],
+            "layers": layers,
+        })
+
+    # Run GPU extraction on Modal
+    print(f"\nExtracting attention matrices on Modal ({len(batches)} batches)...")
+    extractor_cls = modal.Cls.from_name("agent-critique", "AlignmentExtractor")
+    extractor = extractor_cls(model_id=model_id)
+
     all_results = []
-    for i, pair in enumerate(pairs):
-        if (i + 1) % 10 == 0:
-            print(f"  Processed {i + 1}/{len(pairs)}")
+    async for batch_result in extractor.extract_batch_all_layers.map.aio(batches):
+        if not batch_result.get("model_available", True):
+            print("ERROR: Model not available on HuggingFace")
+            return
+        all_results.extend(batch_result["results"])
+        print(f"  Processed batch {batch_result['idx'] + 1}/{len(batches)}")
 
-        try:
-            result = extract_attention_all_layers(
-                model, tokenizer,
-                pair["src"], pair["tgt"],
-                src_lang=src_lang, tgt_lang=tgt_lang
-            )
-            all_results.append(result)
-        except Exception as e:
-            print(f"  Warning: Failed on pair {i}: {e}")
+    print(f"Extracted {len(all_results)} attention matrices")
 
-    print(f"Successfully extracted {len(all_results)} attention matrices")
-
-    # Compare across all layers
+    # Compare across specified layers
     print("\n" + "="*70)
     print("LAYER-BY-LAYER COMPARISON")
     print("="*70)
-
-    num_layers = len(all_results[0]["attention_matrices"]) if all_results else 24
 
     results_table = []
     results_table.append("| Layer | Std Bidir | Shift Bidir | Delta | Std Conc | Shift Conc | Delta |")
     results_table.append("|-------|-----------|-------------|-------|----------|------------|-------|")
 
-    best_std_layer = 0
+    best_std_layer = layers[0]
     best_std_score = 0
-    best_shift_layer = 0
+    best_shift_layer = layers[0]
     best_shift_score = 0
 
-    for layer in range(num_layers):
+    for layer in layers:
         std_metrics = compute_metrics_for_layer(all_results, layer, use_shift_att=False)
         shift_metrics = compute_metrics_for_layer(all_results, layer, use_shift_att=True)
 
@@ -388,14 +326,11 @@ def main():
         help="Number of sentence pairs to sample (default: 100)"
     )
     parser.add_argument(
-        "--src-lang",
-        default="eng_Latn",
-        help="Source language code for NLLB (default: eng_Latn)"
-    )
-    parser.add_argument(
-        "--tgt-lang",
-        default="nih_Latn",
-        help="Target language code for NLLB (default: nih_Latn)"
+        "--layers",
+        type=int,
+        nargs="+",
+        default=[3, 5, 7, 9, 11],
+        help="Layers to extract and compare (default: 3 5 7 9 11)"
     )
     parser.add_argument(
         "--output",
@@ -405,15 +340,14 @@ def main():
 
     args = parser.parse_args()
 
-    run_comparison(
+    asyncio.run(run_comparison(
         model_id=args.model,
         source_path=args.source,
         target_path=args.target,
         sample_size=args.sample_size,
-        src_lang=args.src_lang,
-        tgt_lang=args.tgt_lang,
+        layers=args.layers,
         output_file=args.output,
-    )
+    ))
 
 
 if __name__ == "__main__":
