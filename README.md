@@ -16,16 +16,29 @@ The **Shift-Att** method was proposed by [Zenkel et al. (EMNLP 2020)](https://ac
 
 We hypothesized that Shift-Att would improve alignment quality for finetuned NLLB models used in low-resource language settings.
 
-### Findings
+## Findings
 
-**Empirical testing on two finetuned NLLB models showed that Shift-Att produces WORSE results than the standard method across all layers.**
+**Empirical testing on 7 finetuned NLLB models showed that Shift-Att produces WORSE results than the standard method.**
 
-| Model | Best Layer | Standard Bidirectional | Shift-Att Bidirectional | Difference |
-|-------|------------|------------------------|-------------------------|------------|
-| eng-nih | Layer 5 | 0.6234 | 0.5891 | -5.5% |
-| ben-mjx | Layer 5 | 0.5987 | 0.5612 | -6.3% |
+**Metric**: Bidirectional agreement score — measures how consistently the attention-based alignments agree when computed in both directions (source→target and target→source). Higher scores indicate better alignment quality.
 
-The standard method (extracting attention when the token is output) consistently outperformed Shift-Att for bidirectional agreement - a key indicator of alignment quality.
+| Language Pair | Model | Best Layer | Standard | Shift-Att | Delta |
+|---------------|-------|:----------:|:--------:|:---------:|:-----:|
+| eng → nih | sil-ai/nllb-finetuned-eng-nih | 3 | 0.3484 | 0.3143 | -0.0341 |
+| ben → mjx | sil-ai/nllb-finetuned-ben-mjx | 3 | 0.5620 | 0.4522 | -0.1098 |
+| eng → npi | sil-ai/nllb-finetuned-eng-npi | 2 | 0.3964 | 0.3305 | -0.0659 |
+| eng → pcm | sil-ai/nllb-finetuned-eng-pcm | 3 | 0.5322 | 0.4806 | -0.0516 |
+| eng → qup | sil-ai/nllb-finetuned-eng-qup | 3 | 0.3752 | 0.3236 | -0.0516 |
+| eng → spa | sil-ai/nllb-finetuned-eng-spa | 2 | 0.4272 | 0.4003 | -0.0269 |
+| spa → qup | sil-ai/nllb-finetuned-spa-qup | 3 | 0.3058 | 0.2636 | -0.0422 |
+
+### Key Findings
+
+1. **Standard method outperforms Shift-Att in all 7 language pairs tested**
+2. **Early layers (2-3) are optimal** across all models — not middle layers as sometimes suggested
+3. **Delta ranges from -0.0269 to -0.1098**, representing 6-20% relative improvement for Standard
+4. **Consistent across language families**: Latin scripts (eng, spa, pcm), Devanagari (npi, mjx), Bengali script (ben), and Quechua
+5. **Alignment quality varies by language pair**: scores range from 0.31 (spa-qup) to 0.56 (ben-mjx), likely reflecting model quality and language complexity
 
 **Recommendation**: Use the standard method (`use_shift_att=False`) for finetuned NLLB models.
 
@@ -43,10 +56,16 @@ nllb-word-alignment-from-attention/
 ├── README.md                    # This file
 ├── requirements.txt             # Python dependencies
 ├── alignment_extractor.py       # Core alignment extraction code
-├── compare_methods.py           # Comparison script (local, no Modal)
+├── compare_methods.py           # Comparison script
 ├── results/
-│   ├── eng-nih-results.md       # Full results for English-Nih model
-│   └── ben-mjx-results.md       # Full results for Bengali-Mahle model
+│   ├── README.md                # Summary of all results
+│   ├── eng-nih.md               # Full layer-by-layer results
+│   ├── ben-mjx.md
+│   ├── eng-npi.md
+│   ├── eng-pcm.md
+│   ├── eng-qup.md
+│   ├── eng-spa.md
+│   └── spa-qup.md
 └── data/
     └── README.md                # Instructions for obtaining test data
 ```
@@ -56,6 +75,8 @@ nllb-word-alignment-from-attention/
 ```bash
 git clone https://github.com/sil-ai/nllb-word-alignment-from-attention
 cd nllb-word-alignment-from-attention
+python -m venv .venv
+source .venv/bin/activate
 pip install -r requirements.txt
 
 # Configure Modal (for GPU inference)
@@ -71,15 +92,17 @@ modal token new
 ```bash
 python compare_methods.py \
     --model sil-ai/nllb-finetuned-eng-nih \
-    --source data/eng-source.txt \
-    --target data/nih-target.txt \
-    --sample-size 100
+    --source data/eng-BSB.txt \
+    --target data/nih-NIH.txt \
+    --sample-size 100 \
+    --layers 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 \
+    --output results/eng-nih.md
 ```
 
 ### Output
 
 The script outputs:
-1. Metrics comparison table across all 24 layers
+1. Metrics comparison table across specified layers
 2. Summary showing which method performs better
 3. Markdown-formatted results for documentation
 
@@ -116,9 +139,13 @@ print(result.pharaoh)  # "0-0 1-2 2-1 ..." format
 
 - **Bidirectional Agreement**: For each target word's top-aligned source word, check if that source word's top alignment points back to the original target word. Higher is better.
 - **Concentration**: Entropy-based measure of how focused attention is (vs. spread across all words). Higher means more decisive alignments.
-- **Sparsity**: Fraction of attention weights below threshold. Higher means cleaner alignments.
-- **Confidence**: Fraction of alignments with attention weight >= 0.1.
-- **Rare Word Consistency**: For words appearing 2-5 times, how often they align to the same source word.
+
+## Methodology
+
+- Sample size: 100 sentence pairs per language pair (randomly sampled, both source and target non-empty)
+- Layers tested: All 24 encoder layers (0-23)
+- All models are SIL-AI finetuned NLLB variants
+- Data: Vref-aligned Bible texts
 
 ## References
 
