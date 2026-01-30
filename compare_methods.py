@@ -173,6 +173,7 @@ async def run_comparison(
     sample_size: int = 100,
     layers: List[int] = None,
     output_file: str = None,
+    local: bool = False,
 ):
     """
     Run full comparison between Standard and Shift-Att methods.
@@ -184,6 +185,7 @@ async def run_comparison(
         sample_size: Number of sentence pairs to evaluate
         layers: List of layers to extract (default: [3, 5, 7, 9, 11])
         output_file: Optional output file for results
+        local: If True, run on local GPU instead of Modal cloud
     """
     import modal
 
@@ -216,18 +218,34 @@ async def run_comparison(
             "layers": layers,
         })
 
-    # Run GPU extraction on Modal
-    print(f"\nExtracting attention matrices on Modal ({len(batches)} batches)...")
-    extractor_cls = modal.Cls.from_name("nllb-alignment", "AlignmentExtractor")
-    extractor = extractor_cls(model_id=model_id)
-
+    # Run GPU extraction
     all_results = []
-    async for batch_result in extractor.extract_batch_all_layers.map.aio(batches):
-        if not batch_result.get("model_available", True):
-            print("ERROR: Model not available on HuggingFace")
-            return
-        all_results.extend(batch_result["results"])
-        print(f"  Processed batch {batch_result['idx'] + 1}/{len(batches)}")
+
+    if local:
+        # Run locally on your own GPU
+        print(f"\nExtracting attention matrices locally ({len(batches)} batches)...")
+        from modal_app import AlignmentExtractor
+        extractor = AlignmentExtractor(model_id=model_id)
+
+        for batch in batches:
+            batch_result = extractor.extract_batch_all_layers.local(batch)
+            if not batch_result.get("model_available", True):
+                print("ERROR: Model not available on HuggingFace")
+                return
+            all_results.extend(batch_result["results"])
+            print(f"  Processed batch {batch_result['idx'] + 1}/{len(batches)}")
+    else:
+        # Run on Modal cloud
+        print(f"\nExtracting attention matrices on Modal ({len(batches)} batches)...")
+        extractor_cls = modal.Cls.from_name("nllb-alignment", "AlignmentExtractor")
+        extractor = extractor_cls(model_id=model_id)
+
+        async for batch_result in extractor.extract_batch_all_layers.map.aio(batches):
+            if not batch_result.get("model_available", True):
+                print("ERROR: Model not available on HuggingFace")
+                return
+            all_results.extend(batch_result["results"])
+            print(f"  Processed batch {batch_result['idx'] + 1}/{len(batches)}")
 
     print(f"Extracted {len(all_results)} attention matrices")
 
@@ -337,6 +355,11 @@ def main():
         default=None,
         help="Output file for results (markdown format)"
     )
+    parser.add_argument(
+        "--local",
+        action="store_true",
+        help="Run on local GPU instead of Modal cloud (requires local CUDA)"
+    )
 
     args = parser.parse_args()
 
@@ -347,6 +370,7 @@ def main():
         sample_size=args.sample_size,
         layers=args.layers,
         output_file=args.output,
+        local=args.local,
     ))
 
 

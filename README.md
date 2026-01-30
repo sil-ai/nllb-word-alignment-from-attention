@@ -87,13 +87,16 @@ modal token new
 modal deploy modal_app.py
 ```
 
-**Note**: GPU inference runs remotely on [Modal](https://modal.com/). The first run will download the NLLB model to a persistent volume.
+**Note**: GPU inference can run either:
+- **Modal cloud** (default): Requires `modal deploy modal_app.py` first. Model cached in persistent volume.
+- **Local GPU** (`--local` flag): Requires CUDA. No Modal deployment needed. Model downloaded to local cache.
 
 ## Usage
 
 ### Running the Comparison
 
 ```bash
+# Run on Modal cloud (default)
 python compare_methods.py \
     --model sil-ai/nllb-finetuned-eng-nih \
     --source data/eng-BSB.txt \
@@ -101,6 +104,14 @@ python compare_methods.py \
     --sample-size 100 \
     --layers 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 \
     --output results/eng-nih.md
+
+# Or run on local GPU (requires CUDA)
+python compare_methods.py \
+    --model sil-ai/nllb-finetuned-eng-nih \
+    --source data/eng-BSB.txt \
+    --target data/nih-NIH.txt \
+    --sample-size 100 \
+    --local
 ```
 
 ### Output
