@@ -55,6 +55,7 @@ This finding is important for:
 nllb-word-alignment-from-attention/
 ├── README.md                    # This file
 ├── requirements.txt             # Python dependencies
+├── modal_app.py                 # Modal app for GPU inference (deploy this first)
 ├── alignment_extractor.py       # Core alignment extraction code
 ├── compare_methods.py           # Comparison script
 ├── results/
@@ -81,9 +82,12 @@ pip install -r requirements.txt
 
 # Configure Modal (for GPU inference)
 modal token new
+
+# Deploy the Modal app (creates 'nllb-alignment' app with GPU support)
+modal deploy modal_app.py
 ```
 
-**Note**: GPU inference runs remotely on [Modal](https://modal.com/). You need access to the `agent-critique` Modal app with the `AlignmentExtractor` class.
+**Note**: GPU inference runs remotely on [Modal](https://modal.com/). The first run will download the NLLB model to a persistent volume.
 
 ## Usage
 

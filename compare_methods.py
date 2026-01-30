@@ -17,7 +17,7 @@ Usage:
 
 Prerequisites:
     - Modal account and CLI configured (modal token new)
-    - Access to the agent-critique Modal app with AlignmentExtractor class
+    - Deploy the Modal app first: modal deploy modal_app.py
 """
 
 import argparse
@@ -218,7 +218,7 @@ async def run_comparison(
 
     # Run GPU extraction on Modal
     print(f"\nExtracting attention matrices on Modal ({len(batches)} batches)...")
-    extractor_cls = modal.Cls.from_name("agent-critique", "AlignmentExtractor")
+    extractor_cls = modal.Cls.from_name("nllb-alignment", "AlignmentExtractor")
     extractor = extractor_cls(model_id=model_id)
 
     all_results = []
