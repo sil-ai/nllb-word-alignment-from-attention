@@ -5,6 +5,8 @@ Comparison of **Standard** vs **Shift-Att** methods for extracting word alignmen
 - **Standard**: Extract attention when target token is the decoder *output*
 - **Shift-Att**: Extract attention when target token is the decoder *input* (shifted by +1)
 
+**Metric**: Bidirectional agreement score — measures how consistently the attention-based alignments agree when computed in both directions (source→target and target→source). Higher scores indicate better alignment quality.
+
 ## Results
 
 | Language Pair | Model | Best Layer | Standard | Shift-Att | Delta |
@@ -17,7 +19,7 @@ Comparison of **Standard** vs **Shift-Att** methods for extracting word alignmen
 | eng → spa | sil-ai/nllb-finetuned-eng-spa | 2 | 0.4272 | 0.4003 | -0.0269 |
 | spa → qup | sil-ai/nllb-finetuned-spa-qup | 3 | 0.3058 | 0.2636 | -0.0422 |
 
-*Values shown are bidirectional agreement scores at the best-performing layer for the Standard method.*
+*Scores shown at the best-performing layer for the Standard method.*
 
 ## Key Findings
 
@@ -33,6 +35,5 @@ Use `use_shift_att=False` (the default) for finetuned NLLB models.
 ## Methodology
 
 - Sample size: 100 sentence pairs per language pair
-- Layers tested: All 24 layers (0-23)
-- Metric: Bidirectional agreement (alignment consistency in both directions)
+- Layers tested: All 24 encoder layers (0-23)
 - All models are SIL-AI finetuned NLLB variants
