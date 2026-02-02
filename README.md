@@ -89,7 +89,10 @@ modal deploy modal_app.py
 
 **Note**: GPU inference can run either:
 - **Modal cloud** (default): Requires `modal deploy modal_app.py` first. Model cached in persistent volume.
-- **Local GPU** (`--local` flag): Requires CUDA. No Modal deployment needed. Model downloaded to local cache.
+- **Local GPU** (`--local` flag): Requires CUDA and additional dependencies:
+  ```bash
+  pip install torch transformers sentencepiece accelerate
+  ```
 
 ## Usage
 
