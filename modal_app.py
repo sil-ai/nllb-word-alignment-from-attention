@@ -129,6 +129,8 @@ class AlignmentExtractor:
                 attention_mask = src_encoded["attention_mask"].cuda()
 
                 # Tokenize target for teacher forcing
+                # labels = the tokens we want to predict (what the model outputs)
+                # decoder_input_ids = shifted right (what the model sees as input)
                 self.tokenizer.src_lang = default_lang
                 tgt_encoded = self.tokenizer(
                     tgt_text,
@@ -137,7 +139,16 @@ class AlignmentExtractor:
                     truncation=True,
                     max_length=512,
                 )
-                decoder_input_ids = tgt_encoded["input_ids"].cuda()
+                labels = tgt_encoded["input_ids"]
+                # Shift labels right: prepend decoder_start_token_id, remove last token
+                # This creates proper teacher forcing: decoder sees [START, tok1, tok2, ...]
+                # while predicting [tok1, tok2, ..., EOS]
+                decoder_start_token_id = self.model.config.decoder_start_token_id
+                shifted = torch.cat([
+                    torch.tensor([[decoder_start_token_id]]),
+                    labels[:, :-1]
+                ], dim=1)
+                decoder_input_ids = shifted.cuda()
 
                 # Forward pass
                 with torch.no_grad():
@@ -154,8 +165,9 @@ class AlignmentExtractor:
                 attn_matrix = cross_attn[0].mean(dim=0).cpu().numpy().astype(np.float32)
 
                 # Get token strings
+                # Return labels tokens (what's being predicted) not decoder_input_ids
                 src_tokens = self.tokenizer.convert_ids_to_tokens(input_ids[0].cpu().tolist())
-                tgt_tokens = self.tokenizer.convert_ids_to_tokens(decoder_input_ids[0].cpu().tolist())
+                tgt_tokens = self.tokenizer.convert_ids_to_tokens(labels[0].tolist())
 
                 results.append({
                     "src_tokens": src_tokens,
@@ -237,6 +249,8 @@ class AlignmentExtractor:
                 attention_mask = src_encoded["attention_mask"].cuda()
 
                 # Tokenize target for teacher forcing
+                # labels = the tokens we want to predict (what the model outputs)
+                # decoder_input_ids = shifted right (what the model sees as input)
                 self.tokenizer.src_lang = default_lang
                 tgt_encoded = self.tokenizer(
                     tgt_text,
@@ -245,7 +259,16 @@ class AlignmentExtractor:
                     truncation=True,
                     max_length=512,
                 )
-                decoder_input_ids = tgt_encoded["input_ids"].cuda()
+                labels = tgt_encoded["input_ids"]
+                # Shift labels right: prepend decoder_start_token_id, remove last token
+                # This creates proper teacher forcing: decoder sees [START, tok1, tok2, ...]
+                # while predicting [tok1, tok2, ..., EOS]
+                decoder_start_token_id = self.model.config.decoder_start_token_id
+                shifted = torch.cat([
+                    torch.tensor([[decoder_start_token_id]]),
+                    labels[:, :-1]
+                ], dim=1)
+                decoder_input_ids = shifted.cuda()
 
                 # Single forward pass - gets all layers at once
                 with torch.no_grad():
@@ -266,8 +289,9 @@ class AlignmentExtractor:
                         attention_matrices[layer] = attn_matrix.tolist()
 
                 # Get token strings
+                # Return labels tokens (what's being predicted) not decoder_input_ids
                 src_tokens = self.tokenizer.convert_ids_to_tokens(input_ids[0].cpu().tolist())
-                tgt_tokens = self.tokenizer.convert_ids_to_tokens(decoder_input_ids[0].cpu().tolist())
+                tgt_tokens = self.tokenizer.convert_ids_to_tokens(labels[0].tolist())
 
                 results.append({
                     "src_tokens": src_tokens,

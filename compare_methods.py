@@ -6,6 +6,11 @@ This script runs both methods on sentence pairs and compares:
 1. Intrinsic quality metrics (concentration, bidirectionality, etc.)
 2. Layer-by-layer comparison across NLLB layers
 
+The modal_app.py uses proper teacher forcing:
+- decoder_input_ids = [START, lang, tok1, tok2, ...]  (model input)
+- labels = [lang, tok1, tok2, ..., EOS]  (what we predict)
+- attention[t] = attention when predicting labels[t]
+
 GPU inference runs remotely on Modal. Only lightweight numpy processing runs locally.
 
 Usage:

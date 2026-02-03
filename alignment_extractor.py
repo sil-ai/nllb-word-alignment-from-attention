@@ -122,12 +122,12 @@ def aggregate_attention_to_words(
         src_mapping: Source token-to-word mapping
         tgt_mapping: Target token-to-word mapping
         use_shift_att: If True, use Shift-Att method from Zenkel et al. (EMNLP 2020).
-            Instead of extracting alignments when the target token is the decoder
-            output, extract when the token is the decoder input (shifted by 1 position).
+            With proper teacher forcing, attention[t] captures the attention when
+            predicting token t. Shift-Att uses attention[t+1] instead, i.e., one
+            position beyond when the token is being predicted.
 
-            NOTE: Empirical testing on finetuned NLLB models (eng-nih, ben-mjx) showed
-            that Shift-Att produces WORSE bidirectional agreement scores across all
-            layers. The standard method (use_shift_att=False) is recommended.
+            - use_shift_att=False (Standard): attention when token is being predicted
+            - use_shift_att=True (Shift-Att): attention from position t+1
 
     Returns:
         (tgt_words, src_words) aggregated attention matrix
